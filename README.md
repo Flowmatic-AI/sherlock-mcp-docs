@@ -201,36 +201,53 @@ Gebruik in een client:
 
 ---
 
-## 5. Typische end‑to‑end workflows in een client
+## 5. Typische end‑to‑end workflow met Sherlock MCP
 
-Hier een paar concrete scenario’s hoe je prompts, resources en tools samen inzet.
+Een gebruikelijke flow voor het verwerken van een offerte en subsidieonderzoek ziet er als volgt uit:
 
-### 5.1 Health & capabilities‑check bij start
+### Stap 1 – Offerteanalyse en adresonderzoek (analyse‑schema)
 
-- Stap 1: `health_check` aanroepen met `{"include_resources": true}`
-- Stap 2: Resultaat tonen (status, laatste refresh subsidies/meldcodes)
-- Stap 3: Op basis hiervan beslissen of je bepaalde features (bv. meldcode‑suggesties) aan of uit zet.
+1. Haal de `sherlock-system` prompt op en gebruik deze als system‑prompt voor je LLM.
+2. Lees `schema://analyse-schema` en gebruik dit schema als doelstructuur.
+3. Laat de gebruiker één of meer offertes/facturen uploaden.
+4. Laat je LLM, gestuurd door de system‑prompt en het analyse‑schema, de offerte:
+   - samenvatten in de vereiste bullet‑structuur,
+   - ontbrekende informatie identificeren (`missing_information`),
+   - eventuele installaties en adressen in kaart brengen.
+5. Gebruik de gevonden adressen om, waar relevant, de `address_lookup` tool aan te roepen en gebouw/monumentcontext aan de analyse toe te voegen.
 
-### 5.2 Offerteanalyse → Analyse‑schema
+Resultaat: een gestructureerde analyse‑JSON conform `schema://analyse-schema`, verrijkt met adrescontext.
 
-- Stap 1: `sherlock-system` prompt ophalen en als system message instellen.
-- Stap 2: `schema://analyse-schema` lezen.
-- Stap 3: User uploadt offerte/factuur; jouw client stuurt deze tekst + schema‑instructies naar het LLM en vraagt om output die exact voldoet aan het schema.
-- Stap 4: Gevalideerde JSON terugkrijgen → direct te gebruiken in front‑end of vervolgstap (bijv. automatisch velden vullen).
+### Stap 2 – Subsidieonderzoek op basis van de analyse
 
-### 5.3 Installatie‑ en subsidieadviezen
+1. Gebruik de informatie uit de analyse (installaties, woningtype, context) om queries voor subsidieonderzoek op te bouwen.
+2. Gebruik de tools:
+   - `search_rvo_meldcodes` voor het vinden van meldcodes en productspecificaties;
+   - `search_rvo_subsidies` voor relevante RVO‑subsidies.
+3. Lees `data://web-search/allowed-domains` en geef deze lijst als constraint mee aan je eigen web‑search‑agent of LLM, zodat alleen betrouwbare (met name Nederlandse overheid/overheid‑gerelateerde) domeinen worden gebruikt voor aanvullend onderzoek.
+4. Combineer:
+   - de ISDE/RVO‑data (via de tools),
+   - eventuele extra web‑search resultaten binnen de toegestane domeinen,
+   - en de offerte‑analyse uit stap 1
+   tot één samenhangend subsidie‑beeld.
 
-- Stap 1: Uit analyse komt een lijst installaties/adres → gebruik `address_lookup` om context (monument, type gebouw) op te halen.
-- Stap 2: Per installatie `search_rvo_meldcodes` voor mogelijke meldcodes; combineer dat met `search_rvo_subsidies` voor subsidies.
-- Stap 3: `schema://report-schema` lezen.
-- Stap 4: Een tweede LLM‑call uitvoeren die alle resultaten omzet naar één gestructureerd rapport, volledig conform `ReportEnvelope`.
+Resultaat: een verzameling gestructureerde inzichten over mogelijke regelingen, voorwaarden en relevante bronnen.
 
-### 5.4 ChatGPT‑stijl “search & fetch”
+### Stap 3 – Rapportage op basis van het rapport‑schema
 
-- Stap 1: In een LLM‑host die generieke tools ondersteunt, stel je de server beschikbaar.
-- Stap 2: Het model roept `search(query)` aan als de gebruiker om “informatie over subsidie X” vraagt.
-- Stap 3: De gebruiker of het model kiest een ID, waarna `fetch(doc_id)` wordt aangeroepen.
-- Stap 4: De `text` en `metadata` uit `fetch` worden gebruikt voor onderbouwing/citaties.
+1. Lees `schema://report-schema` (ReportEnvelope/ReportContent).
+2. Gebruik de system‑prompt (`sherlock-system`) opnieuw, aangevuld met:
+   - de analyse‑JSON uit stap 1,
+   - de subsidie‑inzichten uit stap 2,
+   - eventuele aanvullende instructies (bijvoorbeeld stijl of doelgroep).
+3. Laat je LLM een volledig rapport genereren dat exact voldoet aan `schema://report-schema`, inclusief:
+   - beschrijving van de huidige situatie/offerte,
+   - installaties‑overzicht met meldcodes en bedragen,
+   - subsidie‑inzichten (landelijk/provinciaal/gemeentelijk),
+   - samenvatting en aanbevelingen.
+4. Gebruik het gegenereerde rapport direct in je applicatie (bijvoorbeeld als basis voor een PDF, klantpresentatie of dashboard).
+
+In alle stappen fungeert de `sherlock-system` prompt als onderliggende systeemprompt: hij zet de rol, toon en werkwijze van de LLM. Je kunt daarbovenop extra user‑/assistant‑messages toevoegen om deze flow in een chatbot, wizard of andere gestandaardiseerde workflow te gieten.
 
 ---
 
