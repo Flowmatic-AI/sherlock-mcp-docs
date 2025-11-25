@@ -2,14 +2,14 @@
 
 Deze MCP-server (“sherlock-mcp”) ontsluit Nederlandse RVO‑data rond subsidies, meldcodes/energie‑installaties en adresinformatie. De server is ontwikkeld door **Flowmatic** in samenwerking met **Techniek Nederland** en draait als FastMCP‑server achter een HTTP‑endpoint:
 
-- MCP‑client URL: `https://sherlock-mcp-690462901472.europe-west4.run.app`  
+- MCP‑client URL: `https://sherlock-mcp-690462901472.europe-west4.run.app/mcp`  
 - Authenticatie: momenteel **geen authenticatie** actief (iedere client met de URL kan verbinden)
 
 Als MCP‑client zie je drie soorten capabilities:
 
-- **Tools** – actieve functies (zoeken, ophalen, checks)
-- **Resources** – statische/dynamische gegevens, o.a. JSON‑schema’s
-- **Prompts** – herbruikbare prompt‑templates (voor je eigen LLM‑calls)
+- **Tools** – functies (zoeken naar subsidies, meldcodes, adressen)
+- **Resources** – schemas voor structured output, lijst van rijks/provincie/gemeentelijke domeinen.
+- **Prompts** – sherlock system-prompt voor persona en instructies
 
 Onderstaand is een gids hoe je deze elementen als client gebruikt.
 
@@ -21,7 +21,7 @@ De server draait als FastMCP‑HTTP‑server en is via MCP bereikbaar op de gege
 
 - In een MCP‑client (bv. Claude Desktop, VS Code MCP‑plugin, eigen integratie):
   - Configureer een **HTTP/streamable MCP‑server** met:
-    - `url`: `https://sherlock-mcp-690462901472.europe-west4.run.app`
+    - `url`: `https://sherlock-mcp-690462901472.europe-west4.run.app/mcp`
     - Geen extra headers of API keys (nu nog geen auth)
 - De client zal bij connectie automatisch:
   - `initialize` uitvoeren
@@ -53,7 +53,7 @@ Gebruik in een client:
 
 ### 2.2 `address_lookup`
 
-Doel: Nederlands adres vertalen naar gebouw-/monumentinformatie via Stella Spark Nexus WFS.
+Doel: Nederlands adres vertalen naar gebouw-/monumentinformatie via BAG/Stella Spark Nexus WFS.
 
 - Input (JSON): `AddressLookupInput`
   - `postal_code: "1012AB"` (string, zonder spatie)
@@ -64,11 +64,7 @@ Doel: Nederlands adres vertalen naar gebouw-/monumentinformatie via Stella Spark
   - `monument_list`: eventuele monumentinformatie
   - `cql_filter`: onderliggende WFS‑filter
   - `match_count`: aantal ruwe matches
-
-Typische workflows:
-
-- Je UI laat gebruiker een adres invoeren → je roept de tool aan → je voegt de eigenschappen/monumentstatus toe aan de context voor latere LLM‑analyse, of toon je direct in de app.
-
+    
 ### 2.3 `search_rvo_subsidies`
 
 Doel: semantische zoektool in de RVO‑subsidiecatalogus.
@@ -81,49 +77,21 @@ Doel: semantische zoektool in de RVO‑subsidiecatalogus.
   - `results`: lijst met subsidies (id, titel, url, scores, metadata)
   - `last_refresh_at`: laatste update van de dataset
 
-Typische workflows:
-
-- Bij persoonlijke subsidie‑adviezen: eerst `search_rvo_subsidies` draaien met de context van de offerte / woonhuis; resultaten als bronmateriaal opnemen in je LLM‑prompt of als keuzelijst tonen.
-
 ### 2.4 `search_rvo_meldcodes`
 
 Doel: zoeken in meldcode‑/installatieregisters (isolatie, warmtepompen, zonneboilers, HR‑glas).
 
 - Input (JSON): `MeldcodeSearchInput`
-  - `installation_type: ResourceType` – bv. “heat_pumps” (exacte waarden in `ResourceType`)
+  - `installation_type: ResourceType` – één van 'subsidies', 'insulation', 'zonneboilers', 'warmtepompen' of 'hoogrendementsglas'
   - `queries: list[str]` – één of meer zoektermen (productnaam, merk, type…)
   - `limit: int` – max matches per query
 - Output (JSON): `MeldcodeSearchOutput`
   - Per query een lijst met matches; elke match bevat productmetadata en timestamps.
 
-Typische workflows:
-
-- Offerte analyseren → per installatie een query samenstellen (“Nefit EnviLine 6 kW”) → `search_rvo_meldcodes` → meldcodes + subsidiebedragen teruggeven.
-
-### 2.5 ChatGPT‑compatibele tools: `search` en `fetch`
-
-Doel: aansluiten op ChatGPT’s generieke “search & fetch”‑mechanisme.
-
-- `search(query: str)`:
-  - Zoekt over subsidies én meldcode‑resources.
-  - Geeft terug: `{"results": [{"id": "...", "title": "...", "url": "..."}, ...]}`
-  - `id` volgt patronen:
-    - Subsidie: `subsidy|<subsidie_id>`
-    - Meldcode: `meldcode|<resource_type>|<record_id>`
-- `fetch(doc_id: str)`:
-  - Verwacht een ID uit `search`.
-  - Retourneert één volledig document:
-    - `id`, `title`, `text` (samengestelde content), `url`, `metadata`
-
-Typische workflows:
-
-- In ChatGPT of een andere LLM‑host die generieke “search/fetch” kent, kun je deze server gewoon als zoekbron gebruiken zonder de RVO‑details te kennen.
-- In een eigen client kun je `search` gebruiken voor snelle “top result”‑lists en `fetch` voor volledige inhoud en citaten.
-
 #### Tools aanroepen in een client
 
 - In programmeerbare clients (zoals de FastMCP Client) gebruik je `list_tools()` om tools te ontdekken en `call_tool()` om ze aan te roepen met JSON‑argumenten.
-- In UI‑gebaseerde clients (zoals ChatGPT/Claude) zorg je dat de tools **aan** staan; het model mag ze dan zelfstandig oproepen als dat nuttig is, op basis van de toolbeschrijvingen.
+- In UI‑gebaseerde clients (zoals ChatGPT/Claude) mag het llm zelfstandig tools oproepen als dat nuttig is, op basis van de toolbeschrijvingen.
 
 ---
 
@@ -145,7 +113,7 @@ Gebruik in een client:
 
 - Lees via `resources/read` het schema in.
 - Gebruik dit schema om:
-  - Een `response_format` te definiëren in je LLM‑call (bij JSON‑capable modellen).
+  - Een `structured output` te definiëren in je LLM‑call (bij JSON‑capable modellen).
   - Uitgebreide instructies in je prompt te genereren (“volg exact dit schema”).
 
 ### 3.2 `schema://report-schema` (ReportSchema / ReportEnvelope)
@@ -161,7 +129,6 @@ Structuur:
     - `subsidie_inzichten` (landelijk/provinciaal/gemeentelijk)
     - `overige_inzichten`
     - `samenvatting_en_aanbevelingen` (topregelingen, hiaten/risico’s, vervolgstappen)
-  - `gegenereerd_op` (datum)
 
 Gebruik in een client:
 
@@ -235,7 +202,7 @@ Resultaat: een verzameling gestructureerde inzichten over mogelijke regelingen, 
 
 ### Stap 3 – Rapportage op basis van het rapport‑schema
 
-1. Lees `schema://report-schema` (ReportEnvelope/ReportContent).
+1. Lees `schema://report-schema` (ReportEnvelope).
 2. Gebruik de system‑prompt (`sherlock-system`) opnieuw, aangevuld met:
    - de analyse‑JSON uit stap 1,
    - de subsidie‑inzichten uit stap 2,
@@ -247,7 +214,7 @@ Resultaat: een verzameling gestructureerde inzichten over mogelijke regelingen, 
    - samenvatting en aanbevelingen.
 4. Gebruik het gegenereerde rapport direct in je applicatie (bijvoorbeeld als basis voor een PDF, klantpresentatie of dashboard).
 
-In alle stappen fungeert de `sherlock-system` prompt als onderliggende systeemprompt: hij zet de rol, toon en werkwijze van de LLM. Je kunt daarbovenop extra user‑/assistant‑messages toevoegen om deze flow in een chatbot, wizard of andere gestandaardiseerde workflow te gieten.
+In alle stappen fungeert de `sherlock-system` prompt als onderliggende systeemprompt: hij zet de rol, toon en werkwijze van de LLM. Je kunt daarbovenop extra user‑/assistant‑messages toevoegen om deze flow in een chatbot of andere gestandaardiseerde workflow te gieten.
 
 ---
 
@@ -264,7 +231,7 @@ Aan clientzijde:
 
 ## 7. Samenvatting – hoe gebruik je deze MCP als client?
 
-- Configureer de MCP‑client met de URL `https://sherlock-mcp-690462901472.europe-west4.run.app`.
+- Configureer de MCP‑client met de URL `https://sherlock-mcp-690462901472.europe-west4.run.app/mcp`.
 - Gebruik **prompts**:
   - Haal `sherlock-system` op en gebruik het als system prompt voor je LLM.
 - Gebruik **resources**:
@@ -274,7 +241,6 @@ Aan clientzijde:
   - `health_check` voor status.
   - `address_lookup` voor adres → gebouw/monumentdata.
   - `search_rvo_subsidies` en `search_rvo_meldcodes` voor inhoudelijke RVO‑informatie.
-  - `search` + `fetch` voor generieke “zoek & haal” integratie (ChatGPT‑compatibel).
 
 ---
 
@@ -290,7 +256,7 @@ Onderstaand voorbeeld laat zien hoe je verbinding maakt met de Sherlock MCP‑se
 import asyncio
 from fastmcp import Client
 
-MCP_URL = "https://sherlock-mcp-690462901472.europe-west4.run.app"
+MCP_URL = "https://sherlock-mcp-690462901472.europe-west4.run.app/mcp"
 
 async def main() -> None:
     client = Client(MCP_URL)
@@ -317,11 +283,8 @@ asyncio.run(main())
 
 Je ziet dat je in dezelfde sessie tools, resources en prompts kunt gebruiken – precies de drie bouwstenen van Sherlock MCP.
 
-### 8.5 Tools, resources en prompts via de FastMCP Client
 
-De FastMCP Client ontsluit dezelfde functionaliteit die je eerder in deze gids zag – maar dan met extra ergonomie rond tooling.
-
-#### 8.5.1 Tools ontdekken
+#### 8.1.1 Tools ontdekken
 
 Gebruik `list_tools()` om alle tools van Sherlock MCP op te halen:
 
@@ -356,7 +319,7 @@ async with Client(MCP_URL) as client:
 
 > Opmerking: het `meta._fastmcp`‑blok is een FastMCP‑conventie; het kan per serverconfiguratie aan/uit staan.
 
-#### 8.5.2 Tools uitvoeren
+#### 8.1.2 Tools uitvoeren
 
 Een tool roep je aan met `call_tool(name, arguments=...)`:
 
@@ -397,7 +360,7 @@ async with Client(MCP_URL) as client:
     )
 ```
 
-#### 8.5.3 Resultaten lezen (CallToolResult)
+#### 8.1.3 Resultaten lezen (CallToolResult)
 
 `call_tool()` retourneert een `CallToolResult` met drie belangrijke vlakken:
 
@@ -420,7 +383,7 @@ async with Client(MCP_URL) as client:
     print("Timestamp:", health.timestamp)
 ```
 
-#### 8.5.4 Foutafhandeling bij tools
+#### 8.1.4 Foutafhandeling bij tools
 
 Standaard gooit `call_tool()` een `ToolError` als de tool faalt:
 
@@ -436,7 +399,7 @@ async with Client(MCP_URL) as client:
         print("Tool mislukt:", exc)
 ```
 
-#### 8.5.5 Resources (schema’s en data) via de client
+#### 8.1.5 Resources (schema’s en data) via de client
 
 Resources zijn data‑bronnen die Sherlock MCP exposeert. Voor Sherlock zijn dit met name:
 
@@ -488,7 +451,7 @@ async with Client(MCP_URL) as client:
 
 In een multi‑server‑client worden URIs doorgaans geprefixt met de servernaam (conventie per client), bijvoorbeeld `sherlock:schema://analyse-schema` – controleer de FastMCP‑clientdocumentatie voor het exacte patroon.
 
-#### 8.5.6 Prompts via de client
+#### 8.1.6 Prompts via de client
 
 Prompts zijn herbruikbare prompt‑templates die door de server worden aangeboden. Sherlock heeft in ieder geval de `sherlock-system` prompt (centrale systeem‑prompt), maar de client‑API werkt generiek voor alle prompts.
 
